@@ -237,6 +237,7 @@ chrome.storage.sync.get(
           speakButton.textContent = "🔊 Read aloud";
           return;
         }
+                speechSynthesis.cancel();
         const speech = new SpeechSynthesisUtterance(selectedText);
         speech.rate = 0.9;
         speech.onend = () => {
