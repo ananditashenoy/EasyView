@@ -6,8 +6,10 @@ function getBackgroundColor(element) {
   while (current) {
     const style = window.getComputedStyle(current);
     const bg = style.backgroundColor;
-    if (bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
-      return bg;
+    if (bg !== "transparent") {
+      const parts = bg.match(/[\d.]+/g).map(Number);
+      const alpha = parts.length === 4 ? parts[3] : 1; // rgba has a 4th number: opacity
+      if (alpha >= 0.5) return bg; // only trust backgrounds that are mostly solid
     }
     const image = style.backgroundImage;
     if (image.includes("gradient")) {
@@ -36,7 +38,7 @@ function hasOwnText(element) {
 }
 
 chrome.storage.sync.get(
-  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false, readAloud: true },
+  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false, readAloud: true, hoverSpeak: false },
   (settings) => {
 
     // Find every element inside "root" that holds text and hasn't been processed yet
@@ -61,9 +63,10 @@ chrome.storage.sync.get(
         element.dataset.easyview = "done"; // mark it so we never process it twice
 
         // Text size
-        if (settings.textSize > 100) {
+               if (settings.textSize > 100) {
           const scale = settings.textSize / 100;
           element.style.setProperty("font-size", originals[i].size * scale + "px", "important");
+          element.style.setProperty("line-height", "1.3", "important"); // spacing grows with the text
         }
 
         // High contrast
@@ -202,16 +205,17 @@ chrome.storage.sync.get(
 
     // ---------- 5. Read aloud ----------
     if (settings.readAloud) {
+      console.log("EasyView: read aloud is ON");
       const speakButton = document.createElement("button");
       speakButton.dataset.easyviewUi = "true";
       speakButton.textContent = "🔊 Read aloud";
       speakButton.style.cssText = `
-        position: absolute; display: none; z-index: 2147483647;
+        position: fixed; display: none; z-index: 2147483647;
         padding: 10px 16px; font-size: 18px; font-family: Arial, sans-serif;
         background: #1b5e20; color: #ffffff; border: none; border-radius: 8px;
         cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       `;
-      document.body.appendChild(speakButton);
+      document.documentElement.appendChild(speakButton);
 
       let selectedText = "";
 
@@ -219,15 +223,21 @@ chrome.storage.sync.get(
         if (event.target === speakButton) return;
         setTimeout(() => {
           selectedText = window.getSelection().toString().trim();
+          console.log("EasyView selected:", selectedText.slice(0, 50));
           if (selectedText.length > 0) {
-            speakButton.style.left = event.pageX + 10 + "px";
-            speakButton.style.top = event.pageY + 10 + "px";
+            speakButton.style.left = Math.min(event.clientX + 10, window.innerWidth - 180) + "px";
+            speakButton.style.top = Math.min(event.clientY + 10, window.innerHeight - 60) + "px";
             speakButton.style.display = "block";
           } else {
             speakButton.style.display = "none";
           }
         }, 10);
-      });
+      }, true); // capture phase: hear the event before the site can block it
+
+      // Hide the button when scrolling, since it's fixed to the screen
+      window.addEventListener("scroll", () => {
+        if (!speechSynthesis.speaking) speakButton.style.display = "none";
+      }, true);
 
       speakButton.addEventListener("mousedown", (event) => event.preventDefault());
 
@@ -237,7 +247,7 @@ chrome.storage.sync.get(
           speakButton.textContent = "🔊 Read aloud";
           return;
         }
-                speechSynthesis.cancel();
+        speechSynthesis.cancel(); // clear anything stuck in Chrome's speech queue
         const speech = new SpeechSynthesisUtterance(selectedText);
         speech.rate = 0.9;
         speech.onend = () => {
@@ -248,6 +258,59 @@ chrome.storage.sync.get(
         speakButton.textContent = "⏹ Stop";
       });
 
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") speechSynthesis.cancel();
+      });
+    } else {
+      console.log("EasyView: read aloud is OFF in settings");
+    }
+
+    // ---------- 6. Read aloud on hover ----------
+    if (settings.hoverSpeak) {
+      let speakTimer;
+      let lastSpoken = "";
+
+      document.addEventListener("mouseover", (event) => {
+        clearTimeout(speakTimer);
+        if (event.target.closest("[data-easyview-ui]")) return; // ignore EasyView's own UI
+
+        // Buttons and links first; otherwise the nearest element that holds text
+        let target = event.target.closest("a, button, [role='button'], input, select, label");
+        if (!target) {
+          target = event.target;
+          while (target && target !== document.body && !hasOwnText(target)) {
+            target = target.parentElement;
+          }
+        }
+        if (!target || target === document.body) return;
+
+        // What to say: a button's label, an input's value or placeholder, or the visible text
+        let text =
+          target.getAttribute("aria-label") ||
+          (target.tagName === "INPUT" ? target.value || target.placeholder : "") ||
+          target.innerText ||
+          "";
+        text = text.trim().replace(/\s+/g, " ");
+        if (text.length === 0) return;
+        if (text.length > 200) text = text.slice(0, 200) + "...";
+
+        // Wait until the mouse rests for a moment, then speak
+        speakTimer = setTimeout(() => {
+          if (text === lastSpoken && speechSynthesis.speaking) return; // don't repeat mid-sentence
+          speechSynthesis.cancel(); // stop the previous item
+          const speech = new SpeechSynthesisUtterance(text);
+          speech.rate = 0.9;
+          speechSynthesis.speak(speech);
+          lastSpoken = text;
+        }, 700);
+      }, true);
+
+      // Moving the mouse off the page stops the waiting timer
+      document.addEventListener("mouseout", (event) => {
+        if (!event.relatedTarget) clearTimeout(speakTimer);
+      });
+
+      // Escape stops speaking
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") speechSynthesis.cancel();
       });

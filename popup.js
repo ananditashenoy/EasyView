@@ -1,9 +1,9 @@
-const checkboxNames = ["highContrast", "bigButtons", "hoverZoom", "readAloud"];
+const checkboxNames = ["highContrast", "bigButtons", "hoverZoom", "readAloud", "hoverSpeak"];
 const slider = document.getElementById("textSize");
 const sliderValue = document.getElementById("textSizeValue");
 
 chrome.storage.sync.get(
-  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false, readAloud: true },
+  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false, readAloud: true, hoverSpeak: false },
   (settings) => {
     slider.value = settings.textSize;
     sliderValue.textContent = settings.textSize + "%";
