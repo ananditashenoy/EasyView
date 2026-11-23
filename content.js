@@ -25,70 +25,86 @@ function brightness(color) {
   return (r * 299 + g * 587 + b * 114) / 1000;
 }
 
+// ---------- Helper 3: does this element directly contain text? ----------
+function hasOwnText(element) {
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 chrome.storage.sync.get(
-  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false },
+  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false, readAloud: true },
   (settings) => {
-    const textElements = document.querySelectorAll(
-      "p, li, span, a, td, th, label, button, h1, h2, h3, h4, h5, h6"
-    );
 
-    // ---------- Read ORIGINAL sizes and colors first ----------
-    const originalSizes = [];
-    const originalColors = [];
-    textElements.forEach((element) => {
-      const style = window.getComputedStyle(element);
-      originalSizes.push(parseFloat(style.fontSize));
-      originalColors.push(style.color);
-    });
-
-    // ---------- 1. Text size (from the slider) ----------
-    if (settings.textSize > 100) {
-      const scale = settings.textSize / 100;
-      textElements.forEach((element, i) => {
-        element.style.setProperty("font-size", originalSizes[i] * scale + "px", "important");
-      });
+    // Find every element inside "root" that holds text and hasn't been processed yet
+    function findTextElements(root) {
+      const all = [root, ...root.querySelectorAll("*")];
+      return all.filter((element) =>
+        !element.dataset.easyview &&
+        hasOwnText(element) &&
+        !element.closest("script, style, noscript, svg, [data-easyview-ui]")
+      );
     }
 
-    // ---------- 2. High contrast + spacing ----------
-    if (settings.highContrast) {
-      textElements.forEach((element, i) => {
-        const background = getBackgroundColor(element);
+    // ---------- 1 + 2. Text size and high contrast ----------
+    function processTextElements(elements) {
+      // Read ALL original sizes and colors first, before changing anything
+      const originals = elements.map((element) => {
+        const style = window.getComputedStyle(element);
+        return { size: parseFloat(style.fontSize), color: style.color };
+      });
 
-        let darkBackground;
-        if (background) {
-          darkBackground = brightness(background) < 128;
-        } else {
-          darkBackground = brightness(originalColors[i]) > 180;
+      elements.forEach((element, i) => {
+        element.dataset.easyview = "done"; // mark it so we never process it twice
+
+        // Text size
+        if (settings.textSize > 100) {
+          const scale = settings.textSize / 100;
+          element.style.setProperty("font-size", originals[i].size * scale + "px", "important");
         }
 
-        if (darkBackground) {
-          element.style.setProperty("color", "#ffffff", "important");
-        } else {
-          element.style.setProperty("color", "#111111", "important");
-          if (element.closest("a")) {
-            element.style.setProperty("color", "#0645ad", "important");
+        // High contrast
+        if (settings.highContrast) {
+          const background = getBackgroundColor(element);
+          let darkBackground;
+          if (background) {
+            darkBackground = brightness(background) < 128;
+          } else {
+            darkBackground = brightness(originals[i].color) > 180;
+          }
+
+          if (darkBackground) {
+            element.style.setProperty("color", "#ffffff", "important");
+          } else {
+            element.style.setProperty("color", "#111111", "important");
+            if (element.closest("a")) {
+              element.style.setProperty("color", "#0645ad", "important");
+            }
+          }
+
+          const link = element.closest("a");
+          if (link) {
+            const insideText = link.closest("p") || link.closest("article li");
+            element.style.setProperty("text-decoration", insideText ? "underline" : "none", "important");
+          }
+
+          if (element.tagName === "P" || element.tagName === "LI") {
+            element.style.setProperty("line-height", "1.6", "important");
           }
         }
-
-        const link = element.closest("a");
-        if (link) {
-          const insideText = link.closest("p") || link.closest("article li");
-          element.style.setProperty(
-            "text-decoration",
-            insideText ? "underline" : "none",
-            "important"
-          );
-        }
-
-        if (element.tagName === "P" || element.tagName === "LI") {
-          element.style.setProperty("line-height", "1.6", "important");
-        }
       });
     }
 
-    // ---------- 3. Bigger buttons + clear focus outline ----------
-    if (settings.bigButtons) {
-      document.querySelectorAll("a, button, input, select").forEach((element) => {
+    // ---------- 3. Bigger buttons ----------
+    function processClickables(root) {
+      if (!settings.bigButtons) return;
+      const all = [root, ...root.querySelectorAll("a, button, input, select")];
+      all.forEach((element) => {
+        if (!element.matches("a, button, input, select")) return;
+        if (element.closest("[data-easyview-ui]")) return; // skip EasyView's own buttons
         if (element.tagName === "A") {
           element.style.setProperty("padding", "4px 2px", "important");
         } else {
@@ -97,7 +113,26 @@ chrome.storage.sync.get(
           element.style.setProperty("padding", "10px 18px", "important");
         }
       });
+    }
 
+    // Run on everything that's on the page right now
+    processTextElements(findTextElements(document.body));
+    processClickables(document.body);
+
+    // Keep watching: fix any new content the site adds later
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return; // only real elements
+          processTextElements(findTextElements(node));
+          processClickables(node);
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Clear keyboard focus outline
+    if (settings.bigButtons) {
       const focusStyle = document.createElement("style");
       focusStyle.textContent = `
         a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
@@ -111,6 +146,7 @@ chrome.storage.sync.get(
     // ---------- 4. Magnify text on hover ----------
     if (settings.hoverZoom) {
       const zoomBox = document.createElement("div");
+      zoomBox.dataset.easyviewUi = "true"; // tells EasyView not to restyle its own box
       zoomBox.style.cssText = `
         position: fixed; display: none; z-index: 2147483647;
         max-width: 480px; padding: 12px 16px;
@@ -125,10 +161,15 @@ chrome.storage.sync.get(
 
       document.addEventListener("mouseover", (event) => {
         clearTimeout(hoverTimer);
-        const target = event.target.closest(
-          "p, li, a, span, td, th, label, button, h1, h2, h3, h4, h5, h6"
-        );
-        const text = target ? target.innerText.trim() : "";
+        // Climb up from the mouse to the nearest element that holds text
+        let target = event.target;
+        while (target && target !== document.body && !hasOwnText(target)) {
+          target = target.parentElement;
+        }
+        const text =
+          target && target !== document.body && !target.closest("[data-easyview-ui]")
+            ? target.innerText.trim()
+            : "";
 
         if (text.length === 0) {
           zoomBox.style.display = "none";
@@ -156,6 +197,58 @@ chrome.storage.sync.get(
 
       document.addEventListener("mouseout", (event) => {
         if (!event.relatedTarget) zoomBox.style.display = "none";
+      });
+    }
+
+    // ---------- 5. Read aloud ----------
+    if (settings.readAloud) {
+      const speakButton = document.createElement("button");
+      speakButton.dataset.easyviewUi = "true";
+      speakButton.textContent = "🔊 Read aloud";
+      speakButton.style.cssText = `
+        position: absolute; display: none; z-index: 2147483647;
+        padding: 10px 16px; font-size: 18px; font-family: Arial, sans-serif;
+        background: #1b5e20; color: #ffffff; border: none; border-radius: 8px;
+        cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      `;
+      document.body.appendChild(speakButton);
+
+      let selectedText = "";
+
+      document.addEventListener("mouseup", (event) => {
+        if (event.target === speakButton) return;
+        setTimeout(() => {
+          selectedText = window.getSelection().toString().trim();
+          if (selectedText.length > 0) {
+            speakButton.style.left = event.pageX + 10 + "px";
+            speakButton.style.top = event.pageY + 10 + "px";
+            speakButton.style.display = "block";
+          } else {
+            speakButton.style.display = "none";
+          }
+        }, 10);
+      });
+
+      speakButton.addEventListener("mousedown", (event) => event.preventDefault());
+
+      speakButton.addEventListener("click", () => {
+        if (speechSynthesis.speaking) {
+          speechSynthesis.cancel();
+          speakButton.textContent = "🔊 Read aloud";
+          return;
+        }
+        const speech = new SpeechSynthesisUtterance(selectedText);
+        speech.rate = 0.9;
+        speech.onend = () => {
+          speakButton.textContent = "🔊 Read aloud";
+          speakButton.style.display = "none";
+        };
+        speechSynthesis.speak(speech);
+        speakButton.textContent = "⏹ Stop";
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") speechSynthesis.cancel();
       });
     }
   }

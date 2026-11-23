@@ -1,10 +1,9 @@
-const checkboxNames = ["highContrast", "bigButtons", "hoverZoom"];
+const checkboxNames = ["highContrast", "bigButtons", "hoverZoom", "readAloud"];
 const slider = document.getElementById("textSize");
 const sliderValue = document.getElementById("textSizeValue");
 
-// Load saved settings into the popup
 chrome.storage.sync.get(
-  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false },
+  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false, readAloud: true },
   (settings) => {
     slider.value = settings.textSize;
     sliderValue.textContent = settings.textSize + "%";
@@ -14,19 +13,16 @@ chrome.storage.sync.get(
   }
 );
 
-// While dragging: update the number shown
 slider.addEventListener("input", () => {
   sliderValue.textContent = slider.value + "%";
 });
 
-// When you let go: save it and reload the page
 slider.addEventListener("change", () => {
   chrome.storage.sync.set({ textSize: Number(slider.value) }, () => {
     chrome.tabs.reload();
   });
 });
 
-// Checkboxes
 checkboxNames.forEach((name) => {
   document.getElementById(name).addEventListener("change", (event) => {
     chrome.storage.sync.set({ [name]: event.target.checked }, () => {
