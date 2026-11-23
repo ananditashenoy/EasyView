@@ -26,7 +26,7 @@ function brightness(color) {
 }
 
 chrome.storage.sync.get(
-  { bigText: true, highContrast: true, bigButtons: true },
+    { textSize: 125, highContrast: true, bigButtons: true },
   (settings) => {
     const textElements = document.querySelectorAll(
       "p, li, span, a, td, th, label, button, h1, h2, h3, h4, h5, h6"
@@ -42,9 +42,11 @@ chrome.storage.sync.get(
     });
 
     // ---------- 1. Bigger text ----------
-    if (settings.bigText) {
+        // ---------- 1. Text size (from the slider) ----------
+    if (settings.textSize > 100) {
+      const scale = settings.textSize / 100; // 150% becomes 1.5
       textElements.forEach((element, i) => {
-        element.style.setProperty("font-size", originalSizes[i] * 1.25 + "px", "important");
+        element.style.setProperty("font-size", originalSizes[i] * scale + "px", "important");
       });
     }
 

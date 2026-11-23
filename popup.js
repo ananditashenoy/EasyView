@@ -1,17 +1,33 @@
-const settingNames = ["bigText", "highContrast", "bigButtons"];
+const checkboxNames = ["highContrast", "bigButtons"];
+const slider = document.getElementById("textSize");
+const sliderValue = document.getElementById("textSizeValue");
 
-// 1. When the popup opens, show the saved settings (all ON by default)
+// Load saved settings into the popup
 chrome.storage.sync.get(
-  { bigText: true, highContrast: true, bigButtons: true },
+  { textSize: 125, highContrast: true, bigButtons: true },
   (settings) => {
-    settingNames.forEach((name) => {
+    slider.value = settings.textSize;
+    sliderValue.textContent = settings.textSize + "%";
+    checkboxNames.forEach((name) => {
       document.getElementById(name).checked = settings[name];
     });
   }
 );
 
-// 2. When a checkbox is clicked, save it and reload the page
-settingNames.forEach((name) => {
+// While dragging: update the number shown
+slider.addEventListener("input", () => {
+  sliderValue.textContent = slider.value + "%";
+});
+
+// When you let go: save it and reload the page
+slider.addEventListener("change", () => {
+  chrome.storage.sync.set({ textSize: Number(slider.value) }, () => {
+    chrome.tabs.reload();
+  });
+});
+
+// Checkboxes: same as before
+checkboxNames.forEach((name) => {
   document.getElementById(name).addEventListener("change", (event) => {
     chrome.storage.sync.set({ [name]: event.target.checked }, () => {
       chrome.tabs.reload();

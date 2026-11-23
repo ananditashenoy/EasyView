@@ -1,9 +1,9 @@
 // Turns the badge on the toolbar icon green "ON" or gray "OFF"
 function updateBadge() {
   chrome.storage.sync.get(
-    { bigText: true, highContrast: true, bigButtons: true },
+        { textSize: 125, highContrast: true, bigButtons: true },
     (settings) => {
-      const anyOn = settings.bigText || settings.highContrast || settings.bigButtons;
+    const anyOn = settings.textSize > 100 || settings.highContrast || settings.bigButtons;
 
       chrome.action.setBadgeText({ text: anyOn ? "ON" : "OFF" });
       chrome.action.setBadgeBackgroundColor({ color: anyOn ? "#1b7f3b" : "#777777" });
