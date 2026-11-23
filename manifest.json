@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "EasyView",
+  "version": "1.2",
+  "description": "Makes websites easier to read and use for older adults.",
+  "permissions": ["storage"],
+  "action": { "default_popup": "popup.html", "default_title": "EasyView settings" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [ { "matches": ["<all_urls>"], "js": ["content.js"] } ]
+}
