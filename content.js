@@ -16,7 +16,7 @@ function getBackgroundColor(element) {
     }
     current = current.parentElement;
   }
-  return null; // CHANGED: "I couldn't find one" instead of guessing white
+  return null;
 }
 
 // ---------- Helper 2: brightness of a color (0 = black, 255 = white) ----------
@@ -26,7 +26,7 @@ function brightness(color) {
 }
 
 chrome.storage.sync.get(
-    { textSize: 125, highContrast: true, bigButtons: true },
+  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false },
   (settings) => {
     const textElements = document.querySelectorAll(
       "p, li, span, a, td, th, label, button, h1, h2, h3, h4, h5, h6"
@@ -41,10 +41,9 @@ chrome.storage.sync.get(
       originalColors.push(style.color);
     });
 
-    // ---------- 1. Bigger text ----------
-        // ---------- 1. Text size (from the slider) ----------
+    // ---------- 1. Text size (from the slider) ----------
     if (settings.textSize > 100) {
-      const scale = settings.textSize / 100; // 150% becomes 1.5
+      const scale = settings.textSize / 100;
       textElements.forEach((element, i) => {
         element.style.setProperty("font-size", originalSizes[i] * scale + "px", "important");
       });
@@ -55,7 +54,6 @@ chrome.storage.sync.get(
       textElements.forEach((element, i) => {
         const background = getBackgroundColor(element);
 
-        // CHANGED: trust the real background first; use the text-color clue only as a backup
         let darkBackground;
         if (background) {
           darkBackground = brightness(background) < 128;
@@ -72,7 +70,6 @@ chrome.storage.sync.get(
           }
         }
 
-        // CHANGED: underline only links inside real text, not menus
         const link = element.closest("a");
         if (link) {
           const insideText = link.closest("p") || link.closest("article li");
@@ -109,6 +106,57 @@ chrome.storage.sync.get(
         }
       `;
       document.head.appendChild(focusStyle);
+    }
+
+    // ---------- 4. Magnify text on hover ----------
+    if (settings.hoverZoom) {
+      const zoomBox = document.createElement("div");
+      zoomBox.style.cssText = `
+        position: fixed; display: none; z-index: 2147483647;
+        max-width: 480px; padding: 12px 16px;
+        background: #111111; color: #ffeb3b;
+        font-size: 28px; line-height: 1.4; font-family: Arial, sans-serif;
+        border-radius: 10px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        pointer-events: none;
+      `;
+      document.body.appendChild(zoomBox);
+
+      let hoverTimer;
+
+      document.addEventListener("mouseover", (event) => {
+        clearTimeout(hoverTimer);
+        const target = event.target.closest(
+          "p, li, a, span, td, th, label, button, h1, h2, h3, h4, h5, h6"
+        );
+        const text = target ? target.innerText.trim() : "";
+
+        if (text.length === 0) {
+          zoomBox.style.display = "none";
+          return;
+        }
+
+        hoverTimer = setTimeout(() => {
+          zoomBox.textContent = text.length > 300 ? text.slice(0, 300) + "…" : text;
+          zoomBox.style.display = "block";
+        }, 400);
+      });
+
+      document.addEventListener("mousemove", (event) => {
+        let x = event.clientX + 20;
+        let y = event.clientY + 20;
+        if (x + zoomBox.offsetWidth > window.innerWidth) {
+          x = event.clientX - zoomBox.offsetWidth - 20;
+        }
+        if (y + zoomBox.offsetHeight > window.innerHeight) {
+          y = event.clientY - zoomBox.offsetHeight - 20;
+        }
+        zoomBox.style.left = Math.max(10, x) + "px";
+        zoomBox.style.top = Math.max(10, y) + "px";
+      });
+
+      document.addEventListener("mouseout", (event) => {
+        if (!event.relatedTarget) zoomBox.style.display = "none";
+      });
     }
   }
 );

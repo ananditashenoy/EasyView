@@ -1,10 +1,10 @@
-const checkboxNames = ["highContrast", "bigButtons"];
+const checkboxNames = ["highContrast", "bigButtons", "hoverZoom"];
 const slider = document.getElementById("textSize");
 const sliderValue = document.getElementById("textSizeValue");
 
 // Load saved settings into the popup
 chrome.storage.sync.get(
-  { textSize: 125, highContrast: true, bigButtons: true },
+  { textSize: 125, highContrast: true, bigButtons: true, hoverZoom: false },
   (settings) => {
     slider.value = settings.textSize;
     sliderValue.textContent = settings.textSize + "%";
@@ -26,7 +26,7 @@ slider.addEventListener("change", () => {
   });
 });
 
-// Checkboxes: same as before
+// Checkboxes
 checkboxNames.forEach((name) => {
   document.getElementById(name).addEventListener("change", (event) => {
     chrome.storage.sync.set({ [name]: event.target.checked }, () => {
